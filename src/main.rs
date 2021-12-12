@@ -1,23 +1,21 @@
 
 mod history;
+mod state;
 
 use std::collections::HashMap;
 use futures::StreamExt;
 use libp2p::{tcp::TcpConfig, PeerId, identity::{self}, floodsub::{Topic, Floodsub, FloodsubEvent}, mdns::{Mdns, MdnsEvent, MdnsConfig}, NetworkBehaviour, swarm::NetworkBehaviourEventProcess, core::upgrade, Transport, noise::{NoiseConfig, X25519Spec, Keypair}, mplex, Swarm};
 use log::{info, error};
-use serde::{Serialize, Deserialize};
 use tokio::{io::AsyncBufReadExt, sync::mpsc};
 use history::History;
+use state::{Message, MessageType, State};
 
 //TODOS
 //- Bootstrap nodes, rather than mDNS
 //- RequestReply to send Username/History to interested nodes rather than crapping over the entire network
 //- Gossipsub vs Floodsub? Apparently Gossipsub is the more efficent of the two.
 
-struct State {
-    history: History<Message>,
-    usernames: HashMap<PeerId, String>,
-}
+
 
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = true)]
@@ -30,24 +28,6 @@ struct Chat {
     peer_id: String,
     #[behaviour(ignore)]
     responder: mpsc::UnboundedSender<Message>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-enum MessageType {
-    Message,
-    HistoryResponse,
-    UsernameRequest,
-    UsernameResponse,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Message {
-    /// The type of message this is.
-    message_type: MessageType,
-    /// The data contained within the message, represented as a vector of bytes.
-    data: Vec<u8>, //It would be better to use a borrowed value here, as vecs heap allocate
-    /// The intended recipient of the message, a PeerId encoded as a string.
-    addressee: Option<String>,
 }
 
 impl NetworkBehaviourEventProcess<MdnsEvent> for Chat {
@@ -96,44 +76,18 @@ impl NetworkBehaviourEventProcess<FloodsubEvent> for Chat {
                         }
                     }
 
-                    let username: String = self.usernames
-                        .get(&raw_data.source)
-                        .unwrap_or(&String::from("Anon"))
-                        .to_owned();
-
                     match message.message_type {
                         MessageType::Message => {
+                            let username: String = self.state.get_username(&raw_data.source.to_string());
                             println!("{}: {}", username, String::from_utf8_lossy(&message.data));
 
                             //Store message in history
-                            self.history.insert(message);
+                            self.state.history.insert(message);
                         },
-                        MessageType::UsernameRequest => {
-                            info!("Username request received");
-                            let message: Message = Message {
-                                message_type: MessageType::UsernameResponse,
-                                data: self.username.as_bytes().to_vec(),
-                                addressee: Some(raw_data.source.to_string()),
-                            };
-                            send_response(message, self.responder.clone());
-                        },
-                        MessageType::UsernameResponse => {
-                            info!("Username recieved");
-                            if !self.usernames.contains_key(&raw_data.source) {
-                                let username = String::from_utf8_lossy(&message.data);
-                                self.usernames.insert(raw_data.source, username.to_string());
-                                println!("{} joined the chat!", username);
-                            }
-                        },
-                        MessageType::HistoryResponse => {
+                        MessageType::State => {
                             info!("History recieved!");
-                            if self.history.get_count() == 0 {
-                                let data: Vec<Message> = bincode::deserialize(&message.data).unwrap(); //TODO
-                                for message in data {
-                                    println!("Anon: {}", String::from_utf8_lossy(&message.data));
-                                    self.history.insert(message);
-                                }
-                            }
+                            let data: State = bincode::deserialize(&message.data).unwrap();
+                            self.state.merge(data);
                         }
                     }
                 } else {
@@ -141,26 +95,18 @@ impl NetworkBehaviourEventProcess<FloodsubEvent> for Chat {
                 }
             },
             FloodsubEvent::Subscribed { peer_id, topic: _ } => {
-                //Request Username
-                info!("Requesting username...");
+                //Send our state to new user
+                info!("Sending stage to {}", peer_id);
                 let message: Message = Message {
-                    message_type: MessageType::UsernameRequest,
-                    data: vec![],
+                    message_type: MessageType::State,
+                    data: bincode::serialize(&self.state).unwrap(),
                     addressee: Some(peer_id.to_string()),
-                };
-                send_response(message, self.responder.clone());
-
-                //Send History to User
-                info!("Sending history {:?}", &self.history.get_all());
-                let message: Message = Message {
-                    message_type: MessageType::HistoryResponse,
-                    data: bincode::serialize(&self.history.get_all()).unwrap(),
-                    addressee: Some(peer_id.to_string())
+                    source: self.peer_id.to_string(),
                 };
                 send_response(message, self.responder.clone());
             },
             FloodsubEvent::Unsubscribed { peer_id, topic: _ } => {
-                let name = self.usernames.remove(&peer_id).unwrap_or(String::from("Anon"));
+                let name = self.state.usernames.remove(&peer_id.to_string()).unwrap_or(String::from("Anon"));
                 println!("{} has left the chat.", name);
             },
         }
@@ -191,7 +137,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     //Ask the user to generate a username for themselves
     print!("Please enter a username: \n");
-
     let username = stdin.next_line().await.expect("a valid username").unwrap_or(String::from("anon")).trim().to_owned();
 
     let mut behaviour = Chat {
@@ -199,9 +144,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await
             .expect("unable to create mdns"),
         messager: Floodsub::new(peer_id),
-        history: History::new(),
-        usernames: HashMap::default(),
-        username,
+        state: State {
+            history: History::new(),
+            usernames: HashMap::from([(peer_id.to_string(), username)]),
+        },
         peer_id: peer_id.to_string(),
         responder: response_sender,
     };
@@ -222,6 +168,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         message_type: MessageType::Message,
                         data: input_line.as_bytes().to_vec(),
                         addressee: None,
+                        source: peer_id.to_string(),
                     };
                     let bytes = bincode::serialize(&message).unwrap();
                     swarm

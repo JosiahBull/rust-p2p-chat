@@ -1,9 +1,13 @@
-const HISTORY_SIZE: usize = 100;
+use serde::{Serialize, Deserialize};
 
+const HISTORY_SIZE: usize = 32;
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct History<T> {
     data: [Option<T>; HISTORY_SIZE], //Store the latest 100 messages
     pointer: usize,
 }
+
 #[allow(dead_code)]
 impl<T> History<T> {
     ///Create a new history
