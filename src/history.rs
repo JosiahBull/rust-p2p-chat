@@ -46,8 +46,6 @@ impl<T> History<T> {
         for _ in 0..HISTORY_SIZE {
             if let Some(k) = self.data[c].as_ref() {
                 result.push(k);
-            } else {
-                break;
             }
 
             c += 1;
@@ -58,12 +56,30 @@ impl<T> History<T> {
 
         result
     }
+
+    ///Get the current count of items
+    pub fn get_count(&self) -> usize {
+        self.pointer
+    }
 }
 
 
 #[cfg(test)]
 mod test_history {
     use super::*;
+
+    #[test]
+    fn insert_get_all() {
+        let mut history = History::new();
+        for i in 0..10 {
+            history.insert(i);
+        }
+        let items = history.get_all();
+        assert_eq!(items.len(), 10);
+        for i in 0..10 {
+            assert_eq!(*items[i], i);
+        }
+    }
 
     #[test]
     fn insert_items() {

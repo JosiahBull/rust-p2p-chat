@@ -14,17 +14,18 @@ use history::History;
 //- RequestReply to send Username/History to interested nodes rather than crapping over the entire network
 //- Gossipsub vs Floodsub? Apparently Gossipsub is the more efficent of the two.
 
+struct State {
+    history: History<Message>,
+    usernames: HashMap<PeerId, String>,
+}
+
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = true)]
 struct Chat {
     dns: Mdns,
     messager: Floodsub,
     #[behaviour(ignore)]
-    usernames: HashMap<PeerId, String>,
-    #[behaviour(ignore)]
-    history: History<Message>,
-    #[behaviour(ignore)]
-    username: String,
+    state: State,
     #[behaviour(ignore)]
     peer_id: String,
     #[behaviour(ignore)]
@@ -34,7 +35,6 @@ struct Chat {
 #[derive(Serialize, Deserialize, Debug)]
 enum MessageType {
     Message,
-    HistoryRequest,
     HistoryResponse,
     UsernameRequest,
     UsernameResponse,
@@ -125,13 +125,14 @@ impl NetworkBehaviourEventProcess<FloodsubEvent> for Chat {
                                 println!("{} joined the chat!", username);
                             }
                         },
-                        MessageType::HistoryRequest => {
-                            error!("User attempted to collect the history of this chat, this is not yet supported.");
-                        },
                         MessageType::HistoryResponse => {
-                            let data: Vec<Message> = bincode::deserialize(&message.data).unwrap(); //TODO
-                            for message in data {
-                                self.history.insert(message);
+                            info!("History recieved!");
+                            if self.history.get_count() == 0 {
+                                let data: Vec<Message> = bincode::deserialize(&message.data).unwrap(); //TODO
+                                for message in data {
+                                    println!("Anon: {}", String::from_utf8_lossy(&message.data));
+                                    self.history.insert(message);
+                                }
                             }
                         }
                     }
@@ -140,10 +141,21 @@ impl NetworkBehaviourEventProcess<FloodsubEvent> for Chat {
                 }
             },
             FloodsubEvent::Subscribed { peer_id, topic: _ } => {
+                //Request Username
+                info!("Requesting username...");
                 let message: Message = Message {
                     message_type: MessageType::UsernameRequest,
                     data: vec![],
                     addressee: Some(peer_id.to_string()),
+                };
+                send_response(message, self.responder.clone());
+
+                //Send History to User
+                info!("Sending history {:?}", &self.history.get_all());
+                let message: Message = Message {
+                    message_type: MessageType::HistoryResponse,
+                    data: bincode::serialize(&self.history.get_all()).unwrap(),
+                    addressee: Some(peer_id.to_string())
                 };
                 send_response(message, self.responder.clone());
             },
@@ -199,13 +211,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut swarm = Swarm::new(transport, behaviour, peer_id);
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
-
-    //Request history
-    let history_request = Message {
-        message_type: MessageType::HistoryRequest,
-        data: vec![],
-        addressee: None,
-    };
 
     loop {
         tokio::select! {
