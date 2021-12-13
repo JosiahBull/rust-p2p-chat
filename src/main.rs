@@ -233,6 +233,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     swarm.behaviour_mut().messager.unsubscribe(topic);
 
     //HACK workaround to force the unsubscribe to actually send.
+    //Annoying as it causes a delay when closing the application.
     swarm.select_next_some().await;
 
     process::exit(0);
