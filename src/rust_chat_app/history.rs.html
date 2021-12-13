@@ -222,10 +222,10 @@
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">get_items</span>() {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">history</span> <span class="op">=</span> <span class="ident">History::new</span>();
-        <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">50</span>..<span class="number">100</span> {
+        <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">50</span>..<span class="number">82</span> {
             <span class="ident">history</span>.<span class="ident">insert</span>(<span class="ident">i</span> <span class="kw">as</span> <span class="ident">i32</span>);
         }
-        <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="number">50</span> {
+        <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="number">32</span> {
             <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">history</span>.<span class="ident">get</span>(<span class="ident">i</span>).<span class="ident">unwrap</span>();
             <span class="macro">assert_eq!</span>(<span class="kw-2">*</span><span class="ident">g</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">i</span> <span class="op">+</span> <span class="number">50</span>);
         }
