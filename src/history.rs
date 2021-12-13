@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 const HISTORY_SIZE: usize = 32;
 
@@ -20,8 +20,10 @@ impl<T> History<T> {
         }
 
         Self {
-            data: data.try_into().unwrap_or_else(|_| panic!("Failed to generate history array")),
-            pointer: 0
+            data: data
+                .try_into()
+                .unwrap_or_else(|_| panic!("Failed to generate history array")),
+            pointer: 0,
         }
     }
 
@@ -29,7 +31,7 @@ impl<T> History<T> {
     pub fn insert(&mut self, item: T) {
         self.data[self.pointer] = Some(item);
         self.pointer += 1;
-        if self.pointer > self.data.len()-1 {
+        if self.pointer > self.data.len() - 1 {
             self.pointer = 0;
         }
     }
@@ -53,7 +55,7 @@ impl<T> History<T> {
             }
 
             c += 1;
-            if c > self.data.len()-1 {
+            if c > self.data.len() - 1 {
                 c = 0;
             }
         }
@@ -66,7 +68,6 @@ impl<T> History<T> {
         self.pointer
     }
 }
-
 
 #[cfg(test)]
 mod test_history {
@@ -101,7 +102,7 @@ mod test_history {
         }
         for i in 0..50 {
             let g = history.get(i).unwrap();
-            assert_eq!(*g as usize, i+50);
+            assert_eq!(*g as usize, i + 50);
         }
     }
 

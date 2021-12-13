@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::history::History;
 
@@ -32,35 +32,40 @@ pub struct State {
     pub usernames: HashMap<String, String>,
 }
 
-// if self.state.history.get_count() == 0 {
-//     //TODO
-
-//    for message in data {
-//        println!("Anon: {}", String::from_utf8_lossy(&message.data));
-//        self.state.history.insert(message);
-//    }
-// }
-
 impl State {
     /// Attempt to merge two states together.
     /// Note that if our history is up-to-date, then we will not accept this new history
-    pub fn merge(&mut self, other: State) {
-        //Merge usernames
-        self.usernames.extend(other.usernames);
+    pub fn merge(&mut self, mut other: State) {
+        //Merge usernames always!
+        for (peer_id, username) in other.usernames.drain() {
+            if !self.usernames.contains_key(&peer_id) {
+                println!("{} has joined the chat!", &username);
+                self.usernames.insert(peer_id, username);
+            }
+        }
 
         //Merge Messages
         //Note, we only want to merge messages in the event that we don't have any history
-        //This prevents messages from being abused
-        if self.history.get_count() < 1 && other.history.get_count() > 1{
+        //This prevents messages from being abused through spamming!
+        if self.history.get_count() < 1 && other.history.get_count() > 1 {
             //Begin merging
             for message in other.history.get_all() {
-                println!("{}: {}", message.source, String::from_utf8_lossy(&message.data));
+                println!(
+                    "{}: {}",
+                    self.get_username(&message.source),
+                    String::from_utf8_lossy(&message.data)
+                );
                 self.history.insert((*message).to_owned());
             }
         }
     }
 
+    /// Attempt to collect the username of a user, if the user doesn't exist then the username
+    /// defaults to `anon`.
     pub fn get_username(&self, usr: &String) -> String {
-        self.usernames.get(usr).unwrap_or(&String::from("anon")).to_string()
+        self.usernames
+            .get(usr)
+            .unwrap_or(&String::from("anon"))
+            .to_string()
     }
 }

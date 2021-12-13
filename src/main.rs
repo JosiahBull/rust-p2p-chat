@@ -1,21 +1,28 @@
-
 mod history;
 mod state;
 
-use std::collections::HashMap;
 use futures::StreamExt;
-use libp2p::{tcp::TcpConfig, PeerId, identity::{self}, floodsub::{Topic, Floodsub, FloodsubEvent}, mdns::{Mdns, MdnsEvent, MdnsConfig}, NetworkBehaviour, swarm::NetworkBehaviourEventProcess, core::upgrade, Transport, noise::{NoiseConfig, X25519Spec, Keypair}, mplex, Swarm};
-use log::{info, error};
-use tokio::{io::AsyncBufReadExt, sync::mpsc};
 use history::History;
+use libp2p::{
+    core::upgrade,
+    floodsub::{Floodsub, FloodsubEvent, Topic},
+    identity::{self},
+    mdns::{Mdns, MdnsConfig, MdnsEvent},
+    mplex,
+    noise::{Keypair, NoiseConfig, X25519Spec},
+    swarm::NetworkBehaviourEventProcess,
+    tcp::TcpConfig,
+    NetworkBehaviour, PeerId, Swarm, Transport,
+};
+use log::{error, info};
 use state::{Message, MessageType, State};
+use std::{collections::HashMap, process};
+use tokio::{io::AsyncBufReadExt, sync::mpsc, signal::ctrl_c};
 
 //TODOS
 //- Bootstrap nodes, rather than mDNS
 //- RequestReply to send Username/History to interested nodes rather than crapping over the entire network
 //- Gossipsub vs Floodsub? Apparently Gossipsub is the more efficent of the two.
-
-
 
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = true)]
@@ -40,17 +47,18 @@ impl NetworkBehaviourEventProcess<MdnsEvent> for Chat {
                     info!("Peer {} found at {}", peer, addr);
                     self.messager.add_node_to_partial_view(peer);
                 }
-            },
+            }
             MdnsEvent::Expired(nodes) => {
                 //Do we *need* to handle this? What's the risk?
                 //They'll just build up right...
                 for (peer, addr) in nodes {
-                    if !self.dns.has_node(&peer) { //Why this check?
+                    if !self.dns.has_node(&peer) {
+                        //Why this check?
                         info!("Peer {} disconnected at {}", peer, addr);
                         self.messager.remove_node_from_partial_view(&peer);
                     }
                 }
-            },
+            }
         }
     }
 }
@@ -78,12 +86,13 @@ impl NetworkBehaviourEventProcess<FloodsubEvent> for Chat {
 
                     match message.message_type {
                         MessageType::Message => {
-                            let username: String = self.state.get_username(&raw_data.source.to_string());
+                            let username: String =
+                                self.state.get_username(&raw_data.source.to_string());
                             println!("{}: {}", username, String::from_utf8_lossy(&message.data));
 
                             //Store message in history
                             self.state.history.insert(message);
-                        },
+                        }
                         MessageType::State => {
                             info!("History recieved!");
                             let data: State = bincode::deserialize(&message.data).unwrap();
@@ -93,7 +102,7 @@ impl NetworkBehaviourEventProcess<FloodsubEvent> for Chat {
                 } else {
                     error!("Unable to decode message! Due to {:?}", deser.unwrap_err());
                 }
-            },
+            }
             FloodsubEvent::Subscribed { peer_id, topic: _ } => {
                 //Send our state to new user
                 info!("Sending stage to {}", peer_id);
@@ -104,11 +113,15 @@ impl NetworkBehaviourEventProcess<FloodsubEvent> for Chat {
                     source: self.peer_id.to_string(),
                 };
                 send_response(message, self.responder.clone());
-            },
+            }
             FloodsubEvent::Unsubscribed { peer_id, topic: _ } => {
-                let name = self.state.usernames.remove(&peer_id.to_string()).unwrap_or(String::from("Anon"));
+                let name = self
+                    .state
+                    .usernames
+                    .remove(&peer_id.to_string())
+                    .unwrap_or(String::from("Anon"));
                 println!("{} has left the chat.", name);
-            },
+            }
         }
     }
 }
@@ -123,7 +136,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     //TODO, note I have no idea what this does.
     // More reading is required!
-    let auth_keys = Keypair::<X25519Spec>::new().into_authentic(&id_keys).expect("unable to create authenticated keys");
+    let auth_keys = Keypair::<X25519Spec>::new()
+        .into_authentic(&id_keys)
+        .expect("unable to create authenticated keys");
     let transport = TcpConfig::new()
         .upgrade(upgrade::Version::V1)
         .authenticate(NoiseConfig::xx(auth_keys).into_authenticated())
@@ -137,7 +152,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     //Ask the user to generate a username for themselves
     print!("Please enter a username: \n");
-    let username = stdin.next_line().await.expect("a valid username").unwrap_or(String::from("anon")).trim().to_owned();
+    let username = stdin
+        .next_line()
+        .await
+        .expect("a valid username")
+        .unwrap_or(String::from("anon"))
+        .trim()
+        .to_owned();
 
     let mut behaviour = Chat {
         dns: Mdns::new(MdnsConfig::default())
@@ -170,11 +191,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         addressee: None,
                         source: peer_id.to_string(),
                     };
+                    //Send Message
                     let bytes = bincode::serialize(&message).unwrap();
                     swarm
                         .behaviour_mut()
                         .messager
                         .publish(topic.clone(), bytes);
+
+                    //Log Message
+                    swarm
+                        .behaviour_mut()
+                        .state
+                        .history
+                        .insert(message);
                 }
             },
             event = swarm.select_next_some() => {
@@ -188,7 +217,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .messager
                         .publish(topic.clone(), bytes);
                 }
+            },
+            event = ctrl_c() => {
+                if let Err(e) = event {
+                    println!("Failed to register interrupt handler {}", e);
+                }
+                break;
             }
         }
     }
+
+    swarm.behaviour_mut().messager.unsubscribe(topic);
+
+    //HACK workaround to force the unsubscribe to actually send.
+    swarm.select_next_some().await;
+
+    process::exit(0);
 }
