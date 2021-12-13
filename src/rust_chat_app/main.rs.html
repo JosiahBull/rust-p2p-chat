@@ -237,6 +237,7 @@
 <span id="237">237</span>
 <span id="238">238</span>
 <span id="239">239</span>
+<span id="240">240</span>
 </pre><pre class="rust"><code><span class="kw">mod</span> <span class="ident">history</span>;
 <span class="kw">mod</span> <span class="ident">state</span>;
 
@@ -472,6 +473,7 @@
     <span class="ident">swarm</span>.<span class="ident">behaviour_mut</span>().<span class="ident">messager</span>.<span class="ident">unsubscribe</span>(<span class="ident">topic</span>);
 
     <span class="comment">//HACK workaround to force the unsubscribe to actually send.</span>
+    <span class="comment">//Annoying as it causes a delay when closing the application.</span>
     <span class="ident">swarm</span>.<span class="ident">select_next_some</span>().<span class="kw">await</span>;
 
     <span class="ident">process::exit</span>(<span class="number">0</span>);
