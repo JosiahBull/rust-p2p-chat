@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["main",""],["send_message","Send a message using the swarm"],["send_response","Transmit a response to other peers utilising the channels"]],"mod":[["history",""],["state","Handles state for the chat, such as connected users and messaging history."]],"struct":[["Chat",""]]});
