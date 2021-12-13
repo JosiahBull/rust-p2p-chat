@@ -24,6 +24,24 @@ use tokio::{io::AsyncBufReadExt, sync::mpsc, signal::ctrl_c};
 //- RequestReply to send Username/History to interested nodes rather than crapping over the entire network
 //- Gossipsub vs Floodsub? Apparently Gossipsub is the more efficent of the two.
 
+/// Transmit a response to other peers utilising the channels
+fn send_response(message: Message, sender: mpsc::UnboundedSender<Message>) {
+    tokio::spawn(async move {
+        if let Err(e) = sender.send(message) {
+            error!("error sending response via channel {}", e);
+        }
+    });
+}
+
+/// Send a message using the swarm
+fn send_message(message: &Message, swarm: &mut Swarm<Chat>, topic: &Topic) {
+    let bytes = bincode::serialize(message).unwrap();
+    swarm
+        .behaviour_mut()
+        .messager
+        .publish(topic.clone(), bytes);
+}
+
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = true)]
 struct Chat {
@@ -61,14 +79,6 @@ impl NetworkBehaviourEventProcess<MdnsEvent> for Chat {
             }
         }
     }
-}
-
-fn send_response(message: Message, sender: mpsc::UnboundedSender<Message>) {
-    tokio::spawn(async move {
-        if let Err(e) = sender.send(message) {
-            error!("error sending response via channel {}", e);
-        }
-    });
 }
 
 impl NetworkBehaviourEventProcess<FloodsubEvent> for Chat {
@@ -191,12 +201,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         addressee: None,
                         source: peer_id.to_string(),
                     };
-                    //Send Message
-                    let bytes = bincode::serialize(&message).unwrap();
-                    swarm
-                        .behaviour_mut()
-                        .messager
-                        .publish(topic.clone(), bytes);
+
+                    send_message(&message, &mut swarm, &topic);
 
                     //Log Message
                     swarm
@@ -211,11 +217,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
             response = response_rcv.recv() => {
                 if let Some(message) = response {
-                    let bytes = bincode::serialize(&message).unwrap();
-                    swarm
-                        .behaviour_mut()
-                        .messager
-                        .publish(topic.clone(), bytes);
+                    send_message(&message, &mut swarm, &topic);
                 }
             },
             event = ctrl_c() => {
