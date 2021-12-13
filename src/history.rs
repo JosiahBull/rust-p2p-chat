@@ -97,10 +97,10 @@ mod test_history {
     #[test]
     fn get_items() {
         let mut history = History::new();
-        for i in 50..100 {
+        for i in 50..82 {
             history.insert(i as i32);
         }
-        for i in 0..50 {
+        for i in 0..32 {
             let g = history.get(i).unwrap();
             assert_eq!(*g as usize, i + 50);
         }

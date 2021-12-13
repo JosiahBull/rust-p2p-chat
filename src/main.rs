@@ -149,6 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let auth_keys = Keypair::<X25519Spec>::new()
         .into_authentic(&id_keys)
         .expect("unable to create authenticated keys");
+
     let transport = TcpConfig::new()
         .upgrade(upgrade::Version::V1)
         .authenticate(NoiseConfig::xx(auth_keys).into_authenticated())
