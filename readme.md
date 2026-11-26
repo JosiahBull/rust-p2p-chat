@@ -1,4 +1,3 @@
-[![codecov](https://codecov.io/gh/JosiahBull/rust-p2p-chat/branch/main/graph/badge.svg?token=G8ijVDm4rj)](https://codecov.io/gh/JosiahBull/rust-p2p-chat)
 ![Build](https://github.com/JosiahBull/rust-p2p-chat/actions/workflows/test.yml/badge.svg)
 [![Docs](https://github.com/JosiahBull/rust-p2p-chat/actions/workflows/docs.yml/badge.svg)](https://josiahbull.github.io/rust-p2p-chat/rust_p2p_chat/index.html)
 
